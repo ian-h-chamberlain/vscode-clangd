@@ -11,22 +11,23 @@ import * as config from './config';
 
 // Returns the clangd path to be used, or null if clangd is not installed.
 export async function activate(
-    context: ClangdContext, globalStoragePath: string): Promise<string|null> {
+    context: ClangdContext, globalStoragePath: string, globalState: vscode.Memento): Promise<string|null> {
   // If the workspace overrides clangd.path, give the user a chance to bless it.
   await config.get<string>('path');
 
-  const ui = new UI(context, globalStoragePath);
+  const ui = new UI(context, globalStoragePath, globalState);
   context.subscriptions.push(vscode.commands.registerCommand(
       'clangd.install', async () => common.installLatest(ui)));
   context.subscriptions.push(vscode.commands.registerCommand(
       'clangd.update', async () => common.checkUpdates(true, ui)));
-  const status = await common.prepare(ui, config.get<boolean>('checkUpdates'));
+  const status = await common.prepare(ui, config.get<boolean>('checkUpdates')!);
   return status.clangdPath;
 }
 
 class UI {
   constructor(private context: ClangdContext,
-              private globalStoragePath: string) {}
+              private globalStoragePath: string,
+              private globalState: vscode.Memento) {}
 
   get storagePath(): string { return this.globalStoragePath; }
   async choose(prompt: string, options: string[]): Promise<string|undefined> {
@@ -124,15 +125,36 @@ class UI {
   }
 
   get clangdPath(): string {
-    let p = config.get<string>('path')!;
+    const maybeP = config.get<string>('path');
+    const isDefined = vscode.workspace.getConfiguration('clangd').has('path');
+
+    if (isDefined && maybeP === null) {
+      // TODO: maybe needs to use workspace state instead of global
+      const storedPath = this.globalState.get<string>('clangdPath');
+      if (storedPath) {
+        return storedPath;
+      }
+    }
+
+    let p = maybeP!;
+
     // Backwards compatibility: if it's a relative path with a slash, interpret
     // relative to project root.
     if (!path.isAbsolute(p) && p.includes(path.sep) &&
         vscode.workspace.rootPath !== undefined)
       p = path.join(vscode.workspace.rootPath, p);
+
+    console.log(`Running with path ${p}`)
+
     return p;
   }
   set clangdPath(p: string) {
-    config.update('path', p, vscode.ConfigurationTarget.Global);
+    if (config.get<string | null>('path') !== null) {
+      // legacy behavior, rewrite 'path' in the user's config when it's installed
+      config.update('path', p, vscode.ConfigurationTarget.Global);
+    } else {
+      // TODO: there needs to be some way to clear this if you wanted to reinstall or something
+      this.globalState.update('clangdPath', p);
+    }
   }
 }

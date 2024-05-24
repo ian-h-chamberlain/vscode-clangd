@@ -95,10 +95,13 @@
             "title": "clangd",
             "properties": {
                 "clangd.path": {
-                    "type": "string",
                     "default": "clangd",
                     "scope": "machine-overridable",
-                    "description": "The path to clangd executable, e.g.: /usr/bin/clangd."
+                    "description": "The path to clangd executable, e.g.: /usr/bin/clangd. If explicitly set to null, the extension-provided clangd executable will be used.",
+                    "oneOf": [
+                        {"type": "null"},
+                        {"type": "string"}
+                    ]
                 },
                 "clangd.arguments": {
                     "type": "array",
